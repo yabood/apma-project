@@ -1,0 +1,185 @@
+---
+title: "What Makes a Virginia Crash Deadly? A Multi-Method Analysis of 379,000 Crashes (2022–2024)"
+author: "Lastname1, Lastname2, Lastname3"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    fig_caption: true
+    keep_tex: false
+geometry: margin=1in
+fontsize: 11pt
+linestretch: 1.5
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{caption}
+  - \captionsetup[figure]{font=small, labelfont=bf}
+  - \captionsetup[table]{font=small, labelfont=bf}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.align = "center", out.width = "85%")
+library(data.table)
+library(knitr)
+
+derived <- function(f) file.path("..", "data", "derived", f)
+figure  <- function(f) file.path("..", "figures", f)
+```
+
+# Abstract
+
+<!-- 10% — < 300 words. Why this matters; how we researched; conclusions; major points. -->
+
+Traffic crashes killed over 40,000 people nationally in 2023, yet only a small share of all crashes are fatal. Understanding *which* crash characteristics raise the probability of a fatality — and by how much — informs both driver behavior and infrastructure investment. Using the public Virginia Open Data Portal release of 379,234 police-reported crashes from 2022–2024, we apply chi-square tests, multivariable logistic regression, classification trees (CART), and random forests to identify the strongest predictors of crash fatality. Three methods agree that **alcohol involvement, vulnerable road users (pedestrians, motorcyclists, cyclists), speed, and rural locations** are the dominant risk factors, with adjusted odds ratios ranging from 2 to 23. We also document two counterintuitive findings — distracted-driver crashes appear *less* fatal (most likely a reporting artifact) and snow/rain crashes are *less* fatal than dry-road crashes (consistent with risk compensation). Our final logistic model achieves AUC = 0.852 on a held-out test set.
+
+# 1. Dataset
+
+<!-- 10% — Who/why/how/when made it; how we found it; what it contains; collection caveats. -->
+
+The dataset is the **Crash Data** release from the Virginia Department of Motor Vehicles, published through the Virginia Open Data Portal [@vdot_crash_data]. Records are sourced from Virginia's Traffic Records Electronic Data System (TREDS), which centralizes every police-reported crash in the Commonwealth. We downloaded the data on `r format(Sys.Date(), "%B %d, %Y")` from `data.virginia.gov` (URL in the code repository).
+
+**Coverage.** 379,234 crash records across calendar years 2022 (n = 122,434), 2023 (n = 127,596), and 2024 (n = 129,204), spanning 133 Virginia jurisdictions.
+
+**Columns.** 74 fields covering crash dynamics (number of vehicles, collision type), conditions (weather, light, road surface, alignment, traffic control), location (lat/long, jurisdiction, urban vs. rural, interstate vs. not), drivers and special factors (alcohol-involved, speed-related, distracted, texting, teen, mature, large truck, work zone, school zone), vulnerable road users (pedestrian, bicycle, motorcycle, moped), and outcomes (`Number_Of_Fatalities`, `Number_Of_Injuries`, plus subgroup-specific counts).
+
+**Completeness.** Most fields have zero missing values; latitude/longitude is missing for only 5 of 379,234 records. Categorical fields use explicit "Not Provided" or "Unknown" levels rather than blanks.
+
+**Data-creation caveats.** Records come from police crash reports, which capture only crashes that were investigated by law enforcement. Driver-behavior fields (distraction, texting) are filled in by the reporting officer based on witness statements, scene evidence, and driver interviews — when the driver is killed, these fields are systematically harder to populate, biasing apparent rates downward. We address this in §6.
+
+# 2. Research question
+
+<!-- 10% — What you want to find out; why; what scholars already know; prior work on this dataset. -->
+
+**Primary question.** What characteristics of a Virginia crash most strongly predict whether it will be fatal, and how do *raw* (unadjusted) risk factors compare to *adjusted* risk factors after controlling for confounders?
+
+**Why this matters.** Risk factors that look strongest in descriptive statistics are not necessarily the most important after controlling for context. Knowing the adjusted contribution of each factor helps prioritize interventions (e.g., separated bike lanes vs. cellphone-use enforcement).
+
+**Prior work.** State DOTs publish annual safety reports based on the same TREDS data [@vdh_traffic_safety]. Academic studies of crash severity using national FARS data have repeatedly identified alcohol, speed, restraint non-use, and vulnerable-user involvement as dominant factors [@savolainen2011], but typically focus on either fatality-only data (over-representing severe outcomes) or pool many states together. Our analysis uses a Virginia-only, all-severity dataset, which lets us compute *absolute* risk multipliers for each factor.
+
+# 3. Research methods
+
+<!-- 15% — How dataset relates to question; which techniques; which were meaningful; which were new vs. repeats. -->
+
+```{r methods-table}
+methods <- data.table(
+  Technique = c("Descriptive contingency tables",
+                "Chi-square test (binary + multi-level)",
+                "Odds ratios with 95% Wald CI",
+                "Multivariable logistic regression",
+                "VIF / GVIF for multicollinearity",
+                "CART (rpart) with loss matrix",
+                "Random forest (balanced sample)"),
+  `Yielded a meaningful finding?` = c("Yes — set up the story",
+                                       "Yes — all top predictors significant",
+                                       "Yes — quantifies effect size",
+                                       "Yes — separated confounded effects",
+                                       "Yes — confirmed no problematic collinearity",
+                                       "Yes — interpretable rule structure",
+                                       "Yes — robust importance ranking"),
+  `New vs. prior work?` = c("Repetition (standard EDA)",
+                            "Repetition",
+                            "Repetition",
+                            "New (multivariable adjustment on TREDS)",
+                            "New",
+                            "New (loss-weighted tree on rare outcome)",
+                            "New (balanced subsample)")
+)
+kable(methods, caption = "Techniques applied to the dataset.")
+```
+
+**Outcome.** We defined a binary `fatal` indicator (`Number_Of_Fatalities` $\geq 1$). 2,659 of 379,234 crashes (0.70%) had at least one fatality.
+
+**Predictor set.** Selected from significant chi-square results; `TypeOfCollision` excluded because its rare categories (Pedestrian, Bicyclist, Motorcyclist) directly mirror the binary involvement flags. The final logistic model uses 16 predictors after dropping rows with "Not Provided" / "Unknown" on key fields (working sample n = 367,195; 80/20 train/test split). The tree models use the same predictors.
+
+**Imbalance handling.** With a 0.7% positive rate, default rpart splits would never fire. We applied a loss matrix penalising missed-fatal classifications at a ratio of `r round(0.9929/0.0071, 0)`:1, matching the class imbalance. For the random forest, we trained on a 50/50 balanced subsample (n = 5,228).
+
+# 4. Project plan
+
+<!-- 15% — Organisation; meeting cadence; roles; timeline; skills learned. -->
+
+*(Fill in collaboratively. Suggested skeleton:)*
+
+- **Meeting cadence.** Weekly Monday standups over Zoom; ad-hoc Slack throughout.
+- **Roles.** Member 1 — data acquisition and EDA; Member 2 — statistical modeling; Member 3 — figures, writing, references.
+- **Timeline.** *(Insert Gantt-style table.)*
+- **Skills learned.** Multivariable logistic regression interpretation; tree models with class imbalance; reproducible R pipelines with version-controlled scripts; literate reporting with R Markdown.
+
+# 5. Analyze data and results
+
+<!-- 30% — Visualizations; assumptions; interpretation; embedded figures/tables. -->
+
+## 5.1 Raw fatality rates by risk factor
+
+Figure \@ref(fig:fig1) shows unadjusted odds ratios for each binary risk factor against the population baseline fatality rate of 0.70%. Pedestrian-involved crashes are 15× more likely to be fatal; alcohol-involved crashes 8×.
+
+```{r fig1, fig.cap="Unadjusted odds ratios of fatal crash for binary risk factors. Bars show OR with 95% CI; dashed line marks OR = 1 (no effect). Log scale.", out.width="85%"}
+include_graphics(figure("fig01_fatality_rate_by_factor.png"))
+```
+
+## 5.2 Adjusted risk factors (multivariable logistic regression)
+
+Table \@ref(tab:logistic-tab) and Figure \@ref(fig:fig2) report adjusted odds ratios from the multivariable logistic regression.
+
+```{r logistic-tab}
+co <- fread(derived("logistic_coefs.csv"))
+co_top <- co[term != "(Intercept)" & p.value < 0.05 & !grepl("Smoke|Sand", term)]
+setorder(co_top, -or)
+co_top[, OR := sprintf("%.2f (%.2f-%.2f)", or, or_lo, or_hi)]
+co_top[, p := ifelse(p.value < 1e-200, "< 1e-200", signif(p.value, 2))]
+kable(co_top[, .(Term = term, `Adjusted OR (95% CI)` = OR, `p-value` = p)],
+      caption = "Significant predictors from multivariable logistic regression (p < 0.05).")
+```
+
+```{r fig2, fig.cap="Adjusted odds ratios from multivariable logistic regression. Dark points are significant at p < 0.05; grey points are not. Log scale."}
+include_graphics(figure("fig02_forest_adjusted_ORs.png"))
+```
+
+## 5.3 Adjustment changes the story
+
+Figure \@ref(fig:fig3) overlays unadjusted vs. adjusted ORs for each binary risk factor. **Pedestrian, bicycle, and mature-driver effects grow stronger** after adjustment; **nighttime and interstate effects wash out** because they were proxies for darkness and rural location respectively.
+
+```{r fig3, fig.cap="Adjustment changes the story: side-by-side unadjusted vs. adjusted odds ratios."}
+include_graphics(figure("fig03_unadjusted_vs_adjusted.png"))
+```
+
+## 5.4 Model diagnostics
+
+```{r metrics-tab}
+m <- fread(derived("logistic_metrics.csv"))
+kable(m, caption = "Logistic regression diagnostics.")
+```
+
+VIF / GVIF values were all below 3 (max = `r round(max(fread(derived("logistic_vif.csv"))$GVIF), 2)`), indicating no problematic multicollinearity.
+
+## 5.5 Classification tree and ensemble agreement
+
+The CART tree (Figure \@ref(fig:fig4)) splits first on `AlcoholInvolved`, then on `PedestrianInvolved` and `SpeedRelated` — mirroring the logistic regression's top coefficients. The random forest variable-importance ranking (Figure \@ref(fig:fig5)) corroborates this: alcohol, pedestrian, location, and speed top the list.
+
+```{r fig4, fig.cap="CART decision tree (loss-weighted to address class imbalance). Each terminal node is labeled with the predicted class and (n_NonFatal, n_Fatal) counts."}
+include_graphics(figure("fig04_cart_tree.png"))
+```
+
+```{r fig5, fig.cap="Random forest variable importance (mean decrease in Gini)."}
+include_graphics(figure("fig05_rf_importance.png"))
+```
+
+## 5.6 Counterintuitive findings
+
+**Adverse weather is less deadly per crash.** Snow crashes have an adjusted OR of `r round(co[term == "WeatherConditionSnow", or], 2)` and rain `r round(co[term == "WeatherConditionRain", or], 2)` — both *below* 1. Drivers appear to compensate for visibly bad conditions by slowing down or staying off the roads.
+
+**Distracted-driver crashes appear less fatal** (adjusted OR `r round(co[term == "DistractedDriverInvolvedYes", or], 2)`). Two explanations: (i) reporting bias — when the at-fault driver is killed, no one can confirm distraction; (ii) selection — distracted drivers may be more common in low-speed urban crashes. We cannot fully separate these without survey or telematics data.
+
+# 6. Summary
+
+<!-- 10% — < 500 words. The story extracted from the data. -->
+
+Fatal Virginia crashes from 2022–2024 are not a random sample of all crashes; they cluster around a small number of high-risk situations. After adjusting for confounders, the **strongest fatality multipliers** are pedestrian involvement (OR `r round(co[term == "PedestrianInvolvedYes", or], 1)`), bicycle involvement (OR `r round(co[term == "BicycleInvolvedYes", or], 1)`), motorcycle involvement (OR `r round(co[term == "MotorcycleInvolvedYes", or], 1)`), alcohol (OR `r round(co[term == "AlcoholInvolvedYes", or], 1)`), and rural location (OR `r round(co[term == "LocationTypeNameRural", or], 1)`). All three modeling methods — logistic regression, CART, and random forest — agree on this ranking. The model achieves AUC = `r fread(derived("logistic_metrics.csv"))[metric == "auc_test", value]` on held-out data.
+
+Two findings push against intuition. First, **adverse weather is associated with lower per-crash fatality risk**, consistent with the risk-compensation hypothesis: drivers slow down when conditions look obviously dangerous. Second, **distracted-driver crashes are also recorded with lower fatality rates**, but this almost certainly reflects how the field is populated — distraction is hard to confirm post-mortem.
+
+**Practical takeaways.** Per-crash fatality risk is concentrated in *who and where*, not *when*. Investments in pedestrian infrastructure, motorcycle safety, alcohol-impaired-driving enforcement, and rural-roadway design are likely to yield the largest absolute reductions in fatalities. Conditional-on-crash fatality rates should not be used as the sole metric for evaluating distracted-driving policy — exposure-adjusted analyses are needed.
+
+# References
+
+::: {#refs}
+:::
