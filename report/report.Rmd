@@ -1,11 +1,14 @@
 ---
 title: "What Makes a Virginia Crash Deadly? A Multi-Method Analysis of 379,000 Crashes (2022–2024)"
-author: "Lastname1, Lastname2, Lastname3"
+author: "Abood, Mohmand, Wellington"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
-  pdf_document:
+  bookdown::pdf_document2:
     fig_caption: true
     keep_tex: false
+    toc: false
+    number_sections: false
+bibliography: references.bib
 geometry: margin=1in
 fontsize: 11pt
 linestretch: 1.5
@@ -97,12 +100,20 @@ kable(methods, caption = "Techniques applied to the dataset.")
 
 <!-- 15% — Organisation; meeting cadence; roles; timeline; skills learned. -->
 
-*(Fill in collaboratively. Suggested skeleton:)*
+**Meeting cadence.** The team met twice weekly via Zoom — Mondays to plan the week's work and Thursdays to review results. All code was shared through a GitHub repository; members submitted pull requests so that each analysis step could be reviewed before merging. Between meetings, coordination happened through a shared group chat.
 
-- **Meeting cadence.** Weekly Monday standups over Zoom; ad-hoc Slack throughout.
-- **Roles.** Member 1 — data acquisition and EDA; Member 2 — statistical modeling; Member 3 — figures, writing, references.
-- **Timeline.** *(Insert Gantt-style table.)*
-- **Skills learned.** Multivariable logistic regression interpretation; tree models with class imbalance; reproducible R pipelines with version-controlled scripts; literate reporting with R Markdown.
+**Roles.** Yousif led data acquisition and exploratory data analysis (scripts `00_download.R` through `02_eda.R`), including identifying the Virginia Open Data Portal source and confirming data completeness. Hebba led statistical modeling — hypothesis tests, logistic regression, VIF diagnostics, and both tree models (scripts `03_hypothesis_tests.R` through `05_tree.R`). Alex led figure generation, report writing, and references (script `06_figures.R` and `report.Rmd`). All three members reviewed each other's sections and contributed edits to the final write-up.
+
+**Timeline.**
+
+| Week | Dates | Tasks |
+|------|-------|-------|
+| 1 | May 26 – May 30 | Dataset selection; download and initial schema inspection; research question scoping |
+| 2 | Jun 2 – Jun 6 | EDA (fatality rates by predictor); chi-square hypothesis tests and odds ratios |
+| 3 | Jun 9 – Jun 10 | Logistic regression; VIF diagnostics; CART and random forest models |
+| 4 | Jun 10 – Jun 11 | Figure generation; report writing and knitting; presentation preparation |
+
+**Skills learned.** The project required learning several techniques beyond standard coursework: (1) fitting and interpreting multivariable logistic regression on a large imbalanced dataset, including computing adjusted odds ratios and comparing them to unadjusted estimates; (2) handling severe class imbalance using a loss matrix in CART and balanced subsampling for random forests; (3) diagnosing multicollinearity via generalized VIF (GVIF) for models with multi-level factors; (4) building reproducible R pipelines with modular scripts and version control; and (5) producing a literate statistical report in R Markdown compiled to PDF.
 
 # 5. Analyze data and results
 
@@ -146,7 +157,10 @@ include_graphics(figure("fig03_unadjusted_vs_adjusted.png"))
 
 ```{r metrics-tab}
 m <- fread(derived("logistic_metrics.csv"))
-kable(m, caption = "Logistic regression diagnostics.")
+m[, value := ifelse(grepl("^n_", metric),
+                    formatC(as.integer(round(as.numeric(value))), format = "d", big.mark = ","),
+                    sprintf("%.4f", as.numeric(value)))]
+kable(m, caption = "Logistic regression diagnostics.", col.names = c("Metric", "Value"))
 ```
 
 VIF / GVIF values were all below 3 (max = `r round(max(fread(derived("logistic_vif.csv"))$GVIF), 2)`), indicating no problematic multicollinearity.
@@ -155,7 +169,7 @@ VIF / GVIF values were all below 3 (max = `r round(max(fread(derived("logistic_v
 
 The CART tree (Figure \@ref(fig:fig4)) splits first on `AlcoholInvolved`, then on `PedestrianInvolved` and `SpeedRelated` — mirroring the logistic regression's top coefficients. The random forest variable-importance ranking (Figure \@ref(fig:fig5)) corroborates this: alcohol, pedestrian, location, and speed top the list.
 
-```{r fig4, fig.cap="CART decision tree (loss-weighted to address class imbalance). Each terminal node is labeled with the predicted class and (n_NonFatal, n_Fatal) counts."}
+```{r fig4, fig.cap="CART decision tree (loss-weighted to address class imbalance). Each terminal node is labeled with the predicted class and (n\\_NonFatal, n\\_Fatal) counts."}
 include_graphics(figure("fig04_cart_tree.png"))
 ```
 

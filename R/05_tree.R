@@ -88,6 +88,7 @@ rf_dt <- rbind(
   m_dt[fatal == "NonFatal"][sample(.N, n_fatal)]
 )
 cat(sprintf("\nRF training rows (balanced): %d\n", nrow(rf_dt)))
+writeLines(as.character(nrow(rf_dt)), file.path(derived_dir, "rf_sample_n.txt"))
 
 rf <- randomForest(fatal ~ ., data = rf_dt, ntree = 200, importance = TRUE)
 cat("\n== RF confusion (OOB) ==\n"); print(rf$confusion)

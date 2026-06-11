@@ -95,10 +95,15 @@ save_png(p2, "fig02_forest_adjusted_ORs.png", w = 8, h = 7)
 
 # ---------- Figure 3: unadjusted vs adjusted ORs ----------
 # Map each binary predictor's unadjusted OR vs. the corresponding adjusted OR.
-# The adjusted term name is e.g. "AlcoholInvolvedYes".
+# Use prefix matching so multi-level factors (e.g. DaytimeNighttime_NHTSANighttime)
+# are correctly resolved back to their predictor name, not just Yes/No terms.
 adj <- co[, .(term, or, or_lo, or_hi)]
-adj[, predictor := sub("Yes$", "", term)]
-adj <- adj[predictor %in% binary_factors$predictor]
+binary_preds <- binary_factors$predictor
+adj[, predictor := sapply(term, function(t) {
+  m <- binary_preds[startsWith(t, binary_preds)]
+  if (length(m) == 1L) m else NA_character_
+})]
+adj <- adj[!is.na(predictor)]
 unadj <- binary_factors[, .(predictor, unadj_or = or, unadj_lo = or_ci_lo, unadj_hi = or_ci_hi)]
 both  <- merge(adj, unadj, by = "predictor")
 setnames(both, "or", "adj_or"); setnames(both, "or_lo", "adj_lo"); setnames(both, "or_hi", "adj_hi")
@@ -136,12 +141,17 @@ rf_imp <- fread(file.path(derived_dir, "rf_importance.csv"))
 setorder(rf_imp, MeanDecreaseGini)
 rf_imp[, variable := factor(variable, levels = variable)]
 
+rf_n_path <- file.path(derived_dir, "rf_sample_n.txt")
+rf_n_label <- if (file.exists(rf_n_path)) {
+  paste0("n = ", readLines(rf_n_path, warn = FALSE))
+} else "n = balanced"
+
 p5 <- ggplot(rf_imp, aes(x = variable, y = MeanDecreaseGini)) +
   geom_col(fill = "#3b6db5") +
   coord_flip() +
   labs(x = NULL, y = "Mean decrease in Gini",
        title = "Random forest variable importance",
-       subtitle = "Trained on a balanced sample (n = 5,228; 50/50 fatal/non-fatal)") +
+       subtitle = paste0("Trained on a balanced sample (", rf_n_label, "; 50/50 fatal/non-fatal)")) +
   theme(plot.title.position = "plot")
 save_png(p5, "fig05_rf_importance.png", w = 7, h = 5)
 
